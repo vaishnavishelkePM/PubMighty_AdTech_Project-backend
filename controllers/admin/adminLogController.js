@@ -93,18 +93,6 @@ async function getAdminLogs(req, res) {
       order,
       offset,
     });
-    // const cleanRows = rows.map((log) => {
-    //   const item = log.toJSON();
-
-    //   item.beforeAction = item.beforeAction
-    //     ? JSON.parse(item.beforeAction, null, 2)
-    //     : "";
-    //   item.afterAction = item.afterAction
-    //     ? JSON.stringify(item.afterAction, null, 2)
-    //     : "";
-
-    //   return item;
-    // });
 
     const totalPages = Math.ceil(count / perPage);
 
@@ -113,7 +101,7 @@ async function getAdminLogs(req, res) {
       success: true,
       msg: "Admin logs fetched successfully.",
       data: {
-      //  rows: cleanRows,
+        rows: rows,
         pagination: {
           totalItems: count,
           totalPages,
