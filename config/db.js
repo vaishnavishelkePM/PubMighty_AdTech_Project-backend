@@ -36,5 +36,4 @@ const sequelize = new Sequelize(dbConfig.mysql);
 // Export Sequelize instance
 module.exports = sequelize;
 
-
 //testing purpose

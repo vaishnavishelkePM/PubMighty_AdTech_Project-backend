@@ -56,7 +56,7 @@ router.post(
 );
 
 router.post(
-  "/profile/update",
+  "/profiles/update",
   fileUploader.single("avatar"),
   adminController.updateProfile
 );

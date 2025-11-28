@@ -11,7 +11,6 @@ async function getAdminLogs(req, res) {
       return res.status(401).json({ success: false, msg: "Unauthorized" });
     }
 
-    // 2) Validate query params
     const schema = Joi.object({
       page: Joi.number().integer().min(1).default(1),
       perPage: Joi.number().integer().min(1).max(100).default(10),
@@ -94,13 +93,19 @@ async function getAdminLogs(req, res) {
       order,
       offset,
     });
+    // const cleanRows = rows.map((log) => {
+    //   const item = log.toJSON();
 
-    console.log("ADMIN LOGS - count:", count);
-    console.log("ADMIN LOGS - rows.length:", rows.length);
-    console.log(
-      "ADMIN LOGS - sample rows:",
-      rows.map((r) => r.id)
-    );
+    //   item.beforeAction = item.beforeAction
+    //     ? JSON.parse(item.beforeAction, null, 2)
+    //     : "";
+    //   item.afterAction = item.afterAction
+    //     ? JSON.stringify(item.afterAction, null, 2)
+    //     : "";
+
+    //   return item;
+    // });
+
     const totalPages = Math.ceil(count / perPage);
 
     // 5) Return result in same structure as getPublishers
@@ -108,7 +113,7 @@ async function getAdminLogs(req, res) {
       success: true,
       msg: "Admin logs fetched successfully.",
       data: {
-        rows,
+      //  rows: cleanRows,
         pagination: {
           totalItems: count,
           totalPages,
