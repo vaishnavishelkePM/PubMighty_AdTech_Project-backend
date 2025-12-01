@@ -888,15 +888,19 @@ async function addAdmin(req, res) {
     value.password = await bcrypt.hash(value.password, 10);
 
     if (req.file) {
-      const ok = await verifyFileType(req.file);
-      if (!ok) {
-        return res
-          .status(400)
-          .json({ success: false, msg: "Invalid file type" });
-      }
-      value.avatar = await uploadFile(req.file, "upload/admin");
-    }
+  const ok = await verifyFileType(req.file);
+  if (!ok) {
+    return res
+      .status(400)
+      .json({ success: false, msg: "Invalid file type" });
+  }
 
+  const stored = await uploadFile(req.file, "upload/admin");
+
+  // 👇 IMPORTANT: use the same property as editAdmin
+  value.avatar = stored.filename;
+
+}
     const created = await sequelize.transaction(async (t) => {
       const row = await Admin.create(value, { transaction: t });
       return Admin.findByPk(row.id, {
