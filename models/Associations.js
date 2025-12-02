@@ -5,7 +5,7 @@ const PartnerNote = require("./Admin/PartnerNote");
 const PublisherNote = require("./Admin/PublisherNote");
 const Partner = require("./Partners/Partner");
 const PartnerPublisher = require("../models/PartnerPublisher");
-const InventoryNote = require("./Admin/InventoryNote"); // ⬅️ NEW
+const InventoryNote = require("./Admin/InventoryNote");
 
 function initAssociations() {
   // ---------------------------------------------------------------------------

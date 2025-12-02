@@ -119,16 +119,30 @@ async function adminLogin(req, res) {
       });
     }
 
+    // ---------- NEW: derive 2FA type from twoFactorEnabled or legacy columns ----------
+    // twoFactorEnabled: 0 = off, 1 = app, 2 = email
+    const twoFAType = (() => {
+      if (typeof admin.twoFactorEnabled === "number") {
+        if (admin.twoFactorEnabled === 1) return "app";
+        if (admin.twoFactorEnabled === 2) return "email";
+        return "off";
+      }
+
+      // legacy fallback (two_fa + two_fa_method)
+      if (admin.two_fa === 1) {
+        if (admin.two_fa_method === "auth_app") return "app";
+        if (admin.two_fa_method === "email") return "email";
+      }
+      return "off";
+    })();
+    // -----------------------------------------------------------------------
+
     // 6) global 2FA toggle for admin login
     const adminLogin2FA = await getOption("admin_login_two_fa_enable", "true"); // your options store "true"/"false"
 
-    if (adminLogin2FA === "true" && admin.two_fa === 1) {
+    if (adminLogin2FA === "true" && twoFAType !== "off") {
       // case A: authenticator app
-      if (
-        admin.two_fa_method === "auth_app" &&
-        admin.two_fa_secret !== null &&
-        admin.two_fa_secret !== ""
-      ) {
+      if (twoFAType === "app" && admin.two_fa_secret) {
         return res.status(200).json({
           success: true,
           requires2FA: true,
@@ -137,8 +151,8 @@ async function adminLogin(req, res) {
         });
       }
 
-      // case B: email-based 2FA (this is your actual row)
-      if (admin.two_fa_method === "email") {
+      // case B: email-based 2FA (twoFactorEnabled = 2, or legacy email mode)
+      if (twoFAType === "email") {
         const otp = generateOtp();
 
         const otpExpiresMinutes = parseInt(
@@ -167,7 +181,6 @@ async function adminLogin(req, res) {
         }
 
         // send OTP email
-        // you already have transporter OR a helper like sendAdmin2FAOtp
         await transporter.sendMail({
           from: noReplyMail,
           to: admin.email,
@@ -255,12 +268,6 @@ async function verifyAdminLogin(req, res) {
       return res.status(400).json({ success: false, msg: "User not found" });
     }
 
-    // password check
-    // const isPasswordMatch = await bcrypt.compare(password, admin.password);
-    // if (!isPasswordMatch) {
-    //   return res.status(400).json({ success: false, msg: "Invalid password" });
-    // }
-
     // status check
     if (admin.status !== 1) {
       return res.status(403).json({
@@ -269,16 +276,29 @@ async function verifyAdminLogin(req, res) {
       });
     }
 
-    if (
-      admin.two_fa === 1 &&
-      admin.two_fa_method === "auth_app" &&
-      admin.two_fa_secret
-    ) {
+    // ---------- derive 2FA type same way as in adminLogin ----------
+    const twoFAType = (() => {
+      if (typeof admin.twoFactorEnabled === "number") {
+        if (admin.twoFactorEnabled === 1) return "app";
+        if (admin.twoFactorEnabled === 2) return "email";
+        return "off";
+      }
+
+      if (admin.two_fa === 1) {
+        if (admin.two_fa_method === "auth_app") return "app";
+        if (admin.two_fa_method === "email") return "email";
+      }
+      return "off";
+    })();
+    // ----------------------------------------------------------------
+
+    if (twoFAType === "app" && admin.two_fa_secret) {
       const ok = await verifyTwoFAToken(admin, otp);
       if (!ok) {
         return res.status(400).json({ success: false, msg: "Invalid OTP" });
       }
     } else {
+      // email OTP flow (twoFactorEnabled = 2 or legacy email mode)
       const otpRecord = await AdminOTP.findOne({
         where: {
           adminId: admin.id,
@@ -329,6 +349,16 @@ async function verifyAdminLogin(req, res) {
       status: 1,
     });
 
+    // 🔐 set the same cookie your normal login uses
+    const maxAgeMs = maxDays * 24 * 60 * 60 * 1000;
+
+    res.cookie("session_key", sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: maxAgeMs,
+    });
+
     return res.status(200).json({
       success: true,
       msg: "Login verified",
@@ -345,6 +375,7 @@ async function verifyAdminLogin(req, res) {
       .json({ success: false, msg: "Internal server error" });
   }
 }
+
 
 async function sendOTPAgain(req, res) {
   try {
