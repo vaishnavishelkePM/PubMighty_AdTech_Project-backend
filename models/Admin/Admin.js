@@ -1,6 +1,5 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../../config/db");
-
 const Admin = sequelize.define(
   "Admin",
   {
@@ -44,7 +43,7 @@ const Admin = sequelize.define(
     ui_setting: {
       type: DataTypes.JSON,
       allowNull: true,
-      defaultValue: {}
+      defaultValue: {},
     },
 
     role: {
@@ -60,26 +59,14 @@ const Admin = sequelize.define(
       type: DataTypes.STRING(256),
       allowNull: true,
     },
-    two_fa: {
+
+    twoFactorEnabled: {
       type: DataTypes.TINYINT.UNSIGNED,
-      allowNull: false,
       defaultValue: 0,
-      validate: {
-        isIn: [[0, 1]],
-      },
+      allowNull: false,
+      comment: "0=off, 1=app, 2=email",
     },
-    two_fa_method: {
-      type: DataTypes.STRING(250),
-      allowNull: true,
-      defaultValue: "email",
-      validate: {
-        isIn: [["email", "auth_app"]],
-      },
-    },
-    two_fa_secret: {
-      type: DataTypes.STRING(300),
-      allowNull: true,
-    },
+
     modifiedAt: {
       type: DataTypes.DATE,
       allowNull: true,
@@ -88,7 +75,6 @@ const Admin = sequelize.define(
   {
     tableName: "pb_admins",
     timestamps: true,
-
     indexes: [
       {
         name: "idx_unique_username",
