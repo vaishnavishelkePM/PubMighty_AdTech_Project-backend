@@ -32,7 +32,12 @@ const Partner = sequelize.define(
       type: DataTypes.STRING(300),
       allowNull: null,
     },
-    
+    is_deleted: {
+      type: DataTypes.TINYINT.UNSIGNED,
+      allowNull: false,
+      defaultValue: 0,
+      comment: "0 = not deleted, 1 = deleted",
+    },
     status: {
       type: DataTypes.TINYINT.UNSIGNED,
       allowNull: false,

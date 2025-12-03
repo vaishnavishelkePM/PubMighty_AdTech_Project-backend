@@ -31,6 +31,12 @@ const Publisher = sequelize.define(
       type: DataTypes.STRING(100),
       allowNull: true,
     },
+    is_deleted: {
+      type: DataTypes.TINYINT.UNSIGNED,
+      allowNull: false,
+      defaultValue: 0,
+      comment: "0 = not deleted, 1 = deleted",
+    },
     password: {
       type: DataTypes.STRING(300),
       allowNull: null,

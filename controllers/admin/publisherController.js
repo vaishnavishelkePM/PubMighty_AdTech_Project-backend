@@ -37,6 +37,7 @@ async function getPublishers(req, res) {
         .valid("id", "username", "status", "updatedAt", "createdAt")
         .default("updatedAt"),
       sortDir: Joi.string().valid("asc", "ASC", "desc", "DESC").default("DESC"),
+      is_deleted: Joi.number().integer().valid(0, 1).default(0),
     });
 
     const { error, value } = schema.validate(req.query, {
@@ -60,6 +61,7 @@ async function getPublishers(req, res) {
       status,
       twoFA,
       sortBy,
+      is_deleted,
       sortDir,
     } = value;
 
@@ -90,7 +92,9 @@ async function getPublishers(req, res) {
     if (typeof twoFA === "number") {
       where.twoFactorEnabled = twoFA;
     }
-
+    if (typeof is_deleted === "number") {
+      where.is_deleted = is_deleted;
+    }
     const offset = (page - 1) * perPage;
 
     const order = [[sortBy, sortDir.toUpperCase()]];
@@ -375,6 +379,8 @@ async function editPublisher(req, res) {
       language: Joi.string().max(3),
       status: Joi.number().integer().valid(0, 1, 2, 3),
       twoFactorEnabled: Joi.number().integer().valid(0, 1, 2),
+
+      is_deleted: Joi.number().integer().valid(0, 1),
     });
 
     const { error: bodyErr, value: body } = bodySchema.validate(req.body, {
@@ -541,7 +547,15 @@ async function deletePublisher(req, res) {
     //     .json({ success: false, msg: "Publisher already deleted." });
     // }
 
-    await publisher.update({ status: 0 });
+    if (Number(publisher.is_deleted) === 1) {
+      return res.status(200).json({
+        success: true,
+        msg: "publisher already deleted.",
+        data: { id: publisher.id },
+      });
+    }
+
+    await publisher.update({ is_deleted: 1 });
 
     if (publisher.avatar) {
       deleteFile(publisher.avatar, "upload/publishers").catch((err) => {
@@ -551,12 +565,13 @@ async function deletePublisher(req, res) {
 
     return res.status(200).json({
       success: true,
-      msg: "Publisher soft-deleted successfully.",
+      msg: "Publisher deleted successfully.",
       data: {
         id: publisher.id,
         username: publisher.username,
         email: publisher.email,
         newStatus: 0,
+        is_deleted: 1,
       },
     });
   } catch (err) {

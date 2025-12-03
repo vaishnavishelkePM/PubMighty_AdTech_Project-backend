@@ -82,6 +82,18 @@ const Inventory = sequelize.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    // is_deleted: {
+    //   type: DataTypes.ENUM(0, 1),
+    //   allowNull: false,
+    //   defaultValue: "0",
+    //   comment: "0 = not deleted, 1 = deleted",
+    // },
+    is_deleted: {
+      type: DataTypes.TINYINT.UNSIGNED,
+      allowNull: false,
+      defaultValue: 0,
+      comment: "0 = not deleted, 1 = deleted",
+    },
 
     createdAt: {
       type: DataTypes.DATE,

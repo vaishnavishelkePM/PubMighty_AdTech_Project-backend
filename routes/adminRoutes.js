@@ -28,9 +28,21 @@ router.post("/check-session-valid", authController.checkIsSessionValid);
 
 // inventory
 router.get("/inventory", inventoryController.getInventories);
-router.get("/inventory/:id", inventoryController.getInventoryById);
-router.post("/inventory", inventoryController.createInventory);
-router.put("/inventory/:id", inventoryController.updateInventory);
+router.get(
+  "/inventory/:id",
+
+  inventoryController.getInventoryById
+);
+router.post(
+  "/inventory",
+  fileUploader.single("logo"),
+  inventoryController.createInventory
+);
+router.put(
+  "/inventory/:id",
+  fileUploader.single("logo"),
+  inventoryController.updateInventory
+);
 router.delete("/inventory/:id", inventoryController.deleteInventory);
 
 // settings

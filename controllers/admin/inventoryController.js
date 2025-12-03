@@ -5,9 +5,81 @@ const { getOption } = require("../../utils/helper");
 const { isAdminSessionValid } = require("../../utils/helpers/authHelper");
 const Publisher = require("../../models/Publishers/Publisher");
 const Partner = require("../../models/Partners/Partner");
+const {
+  verifyFileType,
+  uploadFile,
+  deleteFile,
+} = require("../../utils/helpers/fileUpload");
+
+// async function createInventory(req, res) {
+//   try {
+//     const schema = Joi.object({
+//       publisherId: Joi.number().integer().required(),
+//       type: Joi.string().valid("WEB", "APP", "OTT_CTV").required(),
+//       name: Joi.string().max(255).required(),
+//       url: Joi.string().uri().max(500).allow(null, ""),
+//       developerWeb: Joi.string().uri().max(500).allow(null, ""),
+//       description: Joi.string().allow(null, ""),
+//       logo: Joi.string().uri().max(500).allow(null, ""),
+//       adsTxtStatus: Joi.number().integer().valid(0, 1, 2).default(0),
+//       partnerStatus: Joi.number().integer().valid(0, 1, 2).default(1),
+//       status: Joi.number().integer().valid(0, 1, 2).default(1),
+//       packageName: Joi.string().allow(null, ""),
+//       is_deleted: Joi.number().integer().valid(0, 1).default(0),
+//     });
+
+//     const { error, value } = schema.validate(req.body, {
+//       abortEarly: true,
+//       stripUnknown: true,
+//     });
+
+//     if (error) {
+//       return res.status(400).json({
+//         success: false,
+//         msg: error.details[0].message,
+//       });
+//     }
+//     if (value.type === "WEB" && (!value.url || value.url.trim() === "")) {
+//       return res.status(400).json({
+//         success: false,
+//         msg: "WEB inventory must include a valid URL.",
+//       });
+//     }
+//     if (req.file) {
+//       const ok = await verifyFileType(req.file);
+//       if (!ok) {
+//         return res
+//           .status(400)
+//           .json({ success: false, msg: "Invalid logo file type" });
+//       }
+//       const storedName = await uploadFile(req.file, "upload/inventory");
+//       value.logo = storedName;
+//     }
+//     const inventory = await Inventory.create(value);
+
+//     return res.status(201).json({
+//       success: true,
+//       msg: "Inventory created successfully",
+//       data: inventory,
+//     });
+//   } catch (err) {
+//     console.error("createInventory error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       msg: "Internal server error",
+//     });
+//   }
+// }
 
 async function createInventory(req, res) {
   try {
+    // auth
+    const session = await isAdminSessionValid(req);
+    if (!session || session.success !== true) {
+      return res.status(401).json({ success: false, msg: "Unauthorized" });
+    }
+
+    // NOTE: NO logo in schema – we handle it ONLY via req.file
     const schema = Joi.object({
       publisherId: Joi.number().integer().required(),
       type: Joi.string().valid("WEB", "APP", "OTT_CTV").required(),
@@ -15,11 +87,11 @@ async function createInventory(req, res) {
       url: Joi.string().uri().max(500).allow(null, ""),
       developerWeb: Joi.string().uri().max(500).allow(null, ""),
       description: Joi.string().allow(null, ""),
-      logo: Joi.string().uri().max(500).allow(null, ""),
       adsTxtStatus: Joi.number().integer().valid(0, 1, 2).default(0),
       partnerStatus: Joi.number().integer().valid(0, 1, 2).default(1),
       status: Joi.number().integer().valid(0, 1, 2).default(1),
       packageName: Joi.string().allow(null, ""),
+      is_deleted: Joi.number().integer().valid(0, 1).default(0),
     });
 
     const { error, value } = schema.validate(req.body, {
@@ -34,7 +106,83 @@ async function createInventory(req, res) {
       });
     }
 
-    const inventory = await Inventory.create(value);
+    // WEB + URL rule
+    if (value.type === "WEB" && (!value.url || value.url.trim() === "")) {
+      return res.status(400).json({
+        success: false,
+        msg: "WEB inventory must include a valid URL.",
+      });
+    }
+
+    // ---------- handle logo file safely ----------
+    let logoFilename = null;
+
+    if (req.file) {
+      console.log("tempPath: ", req.file.path);
+
+      const vt = await verifyFileType(req.file);
+      // vt might be { ok: true, mime, ext } OR boolean
+      const ok = typeof vt === "boolean" ? vt : !!vt?.ok;
+
+      console.log("verifyFileType res: ", vt);
+
+      if (!ok) {
+        return res
+          .status(400)
+          .json({ success: false, msg: "Invalid logo file type" });
+      }
+
+      const uploaded = await uploadFile(req.file, "upload/inventory");
+      console.log("uploadFile returned:", uploaded);
+
+      // uploaded can be string / object / boolean – normalize to string
+      if (typeof uploaded === "string") {
+        logoFilename = uploaded;
+      } else if (uploaded && typeof uploaded === "object") {
+        logoFilename =
+          uploaded.filename ||
+          uploaded.fileName ||
+          uploaded.name ||
+          uploaded.storedName ||
+          uploaded.path ||
+          null;
+      } else {
+        logoFilename = null;
+      }
+
+      // last safety check: only accept real string, not object/boolean
+      if (typeof logoFilename !== "string") {
+        console.warn(
+          "Logo filename is not a string, skipping saving logo. Value:",
+          logoFilename
+        );
+        logoFilename = null;
+      }
+    }
+
+    // ---------- build clean payload (no objects/arrays) ----------
+    const payload = {
+      publisherId: value.publisherId,
+      type: value.type,
+      name: value.name,
+      url: value.url || "",
+      developerWeb: value.developerWeb || "",
+      description: value.description || "",
+      adsTxtStatus:
+        typeof value.adsTxtStatus === "number" ? value.adsTxtStatus : 0,
+      partnerStatus:
+        typeof value.partnerStatus === "number" ? value.partnerStatus : 1,
+      status: typeof value.status === "number" ? value.status : 1,
+      packageName: value.packageName || "",
+      is_deleted: typeof value.is_deleted === "number" ? value.is_deleted : 0,
+    };
+
+    // only set logo if we have a valid string
+    if (logoFilename) {
+      payload.logo = logoFilename;
+    }
+
+    const inventory = await Inventory.create(payload);
 
     return res.status(201).json({
       success: true,
@@ -50,189 +198,67 @@ async function createInventory(req, res) {
   }
 }
 
-async function getInventories(req, res) {
+const getInventories = async (req, res) => {
   try {
-    const session = await isAdminSessionValid(req);
-    if (!session.success) {
-      return res.status(401).json(session);
-    }
-    const adminId = session.data;
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.perPage) || 20;
+    const offset = (page - 1) * limit;
 
-    const querySchema = Joi.object({
-      page: Joi.number().integer().min(1).default(1),
-
-      id: Joi.number().integer().min(1).optional(),
-
-      publisherUsername: Joi.string().trim().optional(),
-      publisherId: Joi.number().integer().optional(),
-
-      partnerUsername: Joi.string().trim().optional(),
-      partnerId: Joi.number().integer().optional(),
-
-      type: Joi.string().valid("WEB", "APP", "OTT_CTV", "ALL").optional(),
-      status: Joi.number().integer().valid(0, 1, 2).optional(),
-      partnerStatus: Joi.number().integer().valid(0, 1, 2).optional(),
-      adsTxtStatus: Joi.number().integer().valid(0, 1, 2, 3).optional(),
-
-      name: Joi.string().trim().optional(),
-      url: Joi.string().trim().optional(),
-
-      sortBy: Joi.string()
-        .valid("id", "name", "type", "status", "createdAt", "updatedAt")
-        .default("updatedAt"),
-      sortDir: Joi.string().valid("asc", "desc").default("desc"),
-    });
-
-    const { error, value } = querySchema.validate(req.query, {
-      abortEarly: true,
-      stripUnknown: true,
-    });
-
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: error.details[0].message,
-      });
-    }
-
-    const {
-      page: rawPage,
-      id,
-      publisherUsername,
-      publisherId,
-      partnerUsername,
-      partnerId,
-      type,
-      status,
-      partnerStatus,
-      adsTxtStatus,
-      name,
-      url,
-      sortBy,
-      sortDir,
-    } = value;
-
-    const maxPages = parseInt(
-      (await getOption("total_maxpage_for_inventory", 100)) || 100,
-      10
-    );
-    const perPage = parseInt(
-      (await getOption("default_per_page_inventory", 10)) || 10,
-      10
-    );
-
-    let page = rawPage;
-    if (page > maxPages) page = maxPages;
-
-    const offset = (page - 1) * perPage;
-
-    // -------- where for Inventory --------
     const where = {};
 
-    if (id) where.id = id;
-    if (publisherId) where.publisherId = publisherId;
-    if (partnerId) where.partnerId = partnerId;
-    if (type) where.type = type;
-
-    if (typeof status === "number") where.status = status;
-    if (typeof partnerStatus === "number") where.partnerStatus = partnerStatus;
-    if (typeof adsTxtStatus === "number") where.adsTxtStatus = adsTxtStatus;
-
-    if (name) where.name = { [Op.like]: `%${name}%` };
-    if (url) where.url = { [Op.like]: `%${url}%` };
-
-    // -------- where for associated models --------
-    let publisherWhere;
-    if (publisherUsername) {
-      publisherWhere = {
-        username: { [Op.like]: `${publisherUsername}%` },
-      };
+    // STATUS filter
+    if (req.query.status !== undefined && req.query.status !== "") {
+      where.status = Number(req.query.status);
     }
 
-    let partnerWhere;
-    if (partnerUsername) {
-      partnerWhere = {
-        username: { [Op.like]: `${partnerUsername}%` },
-      };
+    // TYPE filter
+    if (req.query.type) {
+      where.type = req.query.type;
     }
 
-    // -------- sorting --------
-    const sortFieldMap = {
-      id: "id",
-      name: "name",
-      type: "type",
-      status: "status",
-      createdAt: "createdAt",
-      updatedAt: "updatedAt",
-    };
-    const sortField = sortFieldMap[sortBy] || "updatedAt";
-    const sortDirection = sortDir.toUpperCase() === "ASC" ? "ASC" : "DESC";
+    // URL filter
+    if (req.query.url) {
+      where.url = { [Op.like]: `%${req.query.url}%` };
+    }
 
-    // -------- includes (IMPORTANT: single include array) --------
-    const include = [
-      {
-        model: Publisher,
-        as: "publisher",
-        attributes: [
-          "id",
-          "username",
-          "email",
-          "avatar",
-          "firstName",
-          "lastName",
-        ],
-        ...(publisherWhere ? { where: publisherWhere } : {}),
-      },
-      {
-        model: Partner,
-        as: "partner",
-        attributes: [
-          "id",
-          "username",
-          "email",
-          "avatar",
-          "firstName",
-          "lastName",
-        ],
-        ...(partnerWhere ? { where: partnerWhere } : {}),
-      },
-    ];
+    if (req.query.is_deleted === "0" || req.query.is_deleted === "1") {
+      where.is_deleted = Number(req.query.is_deleted); // 0 or 1
+    }
 
-    const { rows, count } = await Inventory.findAndCountAll({
+    const sortBy = req.query.sortBy || "updatedAt";
+    const sortDir = req.query.sortDir === "asc" ? "ASC" : "DESC";
+
+    const result = await Inventory.findAndCountAll({
       where,
-      include,
-      limit: perPage,
+      include: [
+        { model: Publisher, as: "publisher" },
+        { model: Partner, as: "partner" },
+      ],
+      limit,
       offset,
-      order: [[sortField, sortDirection]],
+      order: [[sortBy, sortDir]],
     });
-
-    const totalItems = count;
-    const totalPages = Math.ceil(totalItems / perPage) || 1;
 
     return res.json({
       success: true,
-      message: "Inventories fetched successfully",
       data: {
-        rows,
+        rows: result.rows,
         pagination: {
-          page,
-          perPage,
-          totalItems,
-          totalPages,
-          hasPrev: page > 1,
-          hasNext: page < totalPages,
+          totalItems: result.count,
+          totalPages: Math.ceil(result.count / limit),
+          perPage: limit,
+          currentPage: page,
         },
       },
     });
-  } catch (err) {
-    console.error("getInventories failed:", err);
+  } catch (error) {
+    console.error("getInventories error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch inventories.",
-      data: null,
+      message: "Failed to fetch inventories",
     });
   }
-}
+};
 
 async function getInventoryById(req, res) {
   try {
@@ -312,7 +338,7 @@ async function updateInventory(req, res) {
       adsTxtStatus: Joi.number().integer().valid(0, 1, 2),
       partnerStatus: Joi.number().integer().valid(0, 1, 2),
       status: Joi.number().integer().valid(0, 1, 2),
-
+      is_deleted: Joi.number().integer().valid(0, 1),
       packageName: Joi.string().allow(null, ""),
     });
 
@@ -344,6 +370,9 @@ async function updateInventory(req, res) {
       ...(value.packageName ? { packageName: value.packageName } : {}),
     };
 
+    if (typeof value.is_deleted === "number") {
+      updateData.is_deleted = value.is_deleted;
+    }
     const finalType = updateData.type || inventory.type;
     const finalUrl =
       updateData.url !== undefined ? updateData.url : inventory.url;
@@ -354,6 +383,67 @@ async function updateInventory(req, res) {
         msg: "WEB inventory must include a valid URL.",
         data: null,
       });
+    }
+    // avatar upload for logo (like editPartner)
+    // if (req.file) {
+    //   const ok = await verifyFileType(req.file);
+    //   if (!ok) {
+    //     return res
+    //       .status(400)
+    //       .json({ success: false, msg: "Invalid logo file type" });
+    //   }
+
+    //   const storedName = await uploadFile(req.file, "upload/inventory");
+    //   updateData.logo = storedName;
+
+    //   // delete old logo if exists
+    //   if (inventory.logo) {
+    //     try {
+    //       await deleteFile(inventory.logo, "upload/inventory");
+    //     } catch (_) {
+    //       // ignore delete error
+    //     }
+    //   }
+    // }
+
+    // avatar upload for logo (like editPartner)
+    if (req.file) {
+      const vt = await verifyFileType(req.file);
+      const ok = typeof vt === "boolean" ? vt : !!vt?.ok;
+
+      if (!ok) {
+        return res
+          .status(400)
+          .json({ success: false, msg: "Invalid logo file type" });
+      }
+
+      const uploaded = await uploadFile(req.file, "upload/inventory");
+
+      let logoFilename = null;
+      if (typeof uploaded === "string") {
+        logoFilename = uploaded;
+      } else if (uploaded && typeof uploaded === "object") {
+        logoFilename =
+          uploaded.filename ||
+          uploaded.fileName ||
+          uploaded.name ||
+          uploaded.storedName ||
+          uploaded.path ||
+          null;
+      }
+
+      if (typeof logoFilename === "string" && logoFilename.trim() !== "") {
+        updateData.logo = logoFilename;
+
+        // delete old logo if exists
+        if (inventory.logo) {
+          try {
+            await deleteFile(inventory.logo, "upload/inventory");
+          } catch (_) {
+            // ignore delete error
+          }
+        }
+      }
     }
 
     await inventory.update(updateData);
@@ -375,7 +465,7 @@ async function updateInventory(req, res) {
 
 async function deleteInventory(req, res) {
   try {
-    // 1) auth
+    //  auth
     const session = await isAdminSessionValid(req);
     if (!session.success) {
       return res.status(401).json(session);
@@ -399,7 +489,7 @@ async function deleteInventory(req, res) {
       });
     }
 
-    if (inventory.status === 0) {
+    if (inventory.is_deleted === 1) {
       return res.status(200).json({
         success: true,
         msg: "Inventory already deleted.",
@@ -408,7 +498,7 @@ async function deleteInventory(req, res) {
     }
 
     await inventory.update({
-      status: 0,
+      is_deleted: 1,
       partnerStatus: 0,
     });
 
