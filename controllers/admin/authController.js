@@ -334,7 +334,7 @@ async function verifyAdminLogin(req, res) {
     const maxDays = parseInt(
       await getOption("max_admin_session_duration_days", 7),
       10
-    );
+    ); //changes
     const expiresAt = new Date(Date.now() + maxDays * 24 * 60 * 60 * 1000);
 
     const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
