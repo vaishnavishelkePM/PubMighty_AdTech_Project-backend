@@ -82,6 +82,7 @@ async function createInventory(req, res) {
     // NOTE: NO logo in schema – we handle it ONLY via req.file
     const schema = Joi.object({
       publisherId: Joi.number().integer().required(),
+      partnerId: Joi.number().integer().allow(null).optional(),
       type: Joi.string().valid("WEB", "APP", "OTT_CTV").required(),
       name: Joi.string().max(255).required(),
       url: Joi.string().uri().max(500).allow(null, ""),
@@ -163,6 +164,7 @@ async function createInventory(req, res) {
     // ---------- build clean payload (no objects/arrays) ----------
     const payload = {
       publisherId: value.publisherId,
+      partnerId: typeof value.partnerId === "number" ? value.partnerId : null,
       type: value.type,
       name: value.name,
       url: value.url || "",
@@ -206,9 +208,29 @@ const getInventories = async (req, res) => {
 
     const where = {};
 
-    // STATUS filter
-    if (req.query.status !== undefined && req.query.status !== "") {
-      where.status = Number(req.query.status);
+    // ID filter (single inventory by id via list)
+    if (req.query.id) {
+      where.id = Number(req.query.id);
+    }
+
+    // PUBLISHER filter
+    if (req.query.publisherId) {
+      where.publisherId = Number(req.query.publisherId);
+    }
+
+    // PARTNER filter
+    if (req.query.partnerId) {
+      where.partnerId = Number(req.query.partnerId);
+    }
+
+    // NAME filter (LIKE)
+    if (req.query.name) {
+      where.name = { [Op.like]: `%${req.query.name}%` };
+    }
+
+    // URL filter (LIKE)
+    if (req.query.url) {
+      where.url = { [Op.like]: `%${req.query.url}%` };
     }
 
     // TYPE filter
@@ -216,23 +238,34 @@ const getInventories = async (req, res) => {
       where.type = req.query.type;
     }
 
-    // URL filter
-    if (req.query.url) {
-      where.url = { [Op.like]: `%${req.query.url}%` };
+    // STATUS filter
+    if (req.query.status !== undefined && req.query.status !== '') {
+      where.status = Number(req.query.status);
     }
 
-    if (req.query.is_deleted === "0" || req.query.is_deleted === "1") {
+    // PARTNER STATUS filter
+    if (req.query.partnerStatus !== undefined && req.query.partnerStatus !== '') {
+      where.partnerStatus = Number(req.query.partnerStatus);
+    }
+
+    // ADS.TXT STATUS filter
+    if (req.query.adsTxtStatus !== undefined && req.query.adsTxtStatus !== '') {
+      where.adsTxtStatus = Number(req.query.adsTxtStatus);
+    }
+
+    // DELETED / NON-DELETED filter
+    if (req.query.is_deleted === '0' || req.query.is_deleted === '1') {
       where.is_deleted = Number(req.query.is_deleted); // 0 or 1
     }
 
-    const sortBy = req.query.sortBy || "updatedAt";
-    const sortDir = req.query.sortDir === "asc" ? "ASC" : "DESC";
+    const sortBy = req.query.sortBy || 'updatedAt';
+    const sortDir = req.query.sortDir === 'asc' ? 'ASC' : 'DESC';
 
     const result = await Inventory.findAndCountAll({
       where,
       include: [
-        { model: Publisher, as: "publisher" },
-        { model: Partner, as: "partner" },
+        { model: Publisher, as: 'publisher' },
+        { model: Partner, as: 'partner' },
       ],
       limit,
       offset,
@@ -245,17 +278,17 @@ const getInventories = async (req, res) => {
         rows: result.rows,
         pagination: {
           totalItems: result.count,
-          totalPages: Math.ceil(result.count / limit),
+          totalPages: Math.ceil(result.count / limit) || 1,
           perPage: limit,
           currentPage: page,
         },
       },
     });
   } catch (error) {
-    console.error("getInventories error:", error);
+    console.error('getInventories error:', error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch inventories",
+      message: 'Failed to fetch inventories',
     });
   }
 };

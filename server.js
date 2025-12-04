@@ -56,7 +56,7 @@ const PORT = process.env.PORT || 5000;
 
 const allowedOrigins = [
   "http://localhost:3001",
-  "http://192.168.1.247:3001", // if you open the panel via IP
+  "http://192.168.0.119:3001", // if you open the panel via IP
   // add your production domain later, e.g. "https://panel.pubmighty.com"
 ];
 
