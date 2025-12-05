@@ -85,7 +85,7 @@ async function createInventory(req, res) {
       partnerId: Joi.number().integer().allow(null).optional(),
       type: Joi.string().valid("WEB", "APP", "OTT_CTV").required(),
       name: Joi.string().max(255).required(),
-      url: Joi.string().uri().max(500).allow(null, ""),
+      logo: Joi.string().max(500).allow(null, ""),
       developerWeb: Joi.string().uri().max(500).allow(null, ""),
       description: Joi.string().allow(null, ""),
       adsTxtStatus: Joi.number().integer().valid(0, 1, 2).default(0),
@@ -203,7 +203,7 @@ async function createInventory(req, res) {
 const getInventories = async (req, res) => {
   try {
     const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.perPage) || 20;
+    const limit = Number(req.query.perPage) || 10;
     const offset = (page - 1) * limit;
 
     const where = {};
@@ -367,7 +367,7 @@ async function updateInventory(req, res) {
       url: Joi.string().uri().max(500).allow(null, ""),
       developerWeb: Joi.string().uri().max(500).allow(null, ""),
       description: Joi.string().allow(null, ""),
-      logo: Joi.string().uri().max(500).allow(null, ""),
+      logo: Joi.string().max(500).allow(null, ""),
       adsTxtStatus: Joi.number().integer().valid(0, 1, 2),
       partnerStatus: Joi.number().integer().valid(0, 1, 2),
       status: Joi.number().integer().valid(0, 1, 2),
