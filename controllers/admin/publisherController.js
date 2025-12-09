@@ -510,9 +510,10 @@ async function editPublisher(req, res) {
 }
 
 // delete /admin/publishers/:id/delete
+// delete /admin/publishers/:id/delete
 async function deletePublisher(req, res) {
   try {
-    // Validate :id (same style as editPublisher)
+    // Validate :id
     const paramSchema = Joi.object({
       id: Joi.number().integer().positive().required(),
     });
@@ -528,10 +529,10 @@ async function deletePublisher(req, res) {
         .json({ success: false, msg: paramErr.details[0].message });
     }
 
-    // Admin session validation (same as editPublisher)
+    // Admin session validation
     const session = await isAdminSessionValid(req, res);
     if (!session?.success) {
-      return res.status(401).json({ success: false, msg: 'Unauthorized' });
+      return res.status(401).json({ success: false, msg: "Unauthorized" });
     }
     const adminId = session.data;
 
@@ -540,10 +541,19 @@ async function deletePublisher(req, res) {
     if (!publisher) {
       return res
         .status(404)
-        .json({ success: false, msg: 'Publisher not found' });
+        .json({ success: false, msg: "Publisher not found" });
     }
 
-    // Before-delete snapshot (same pattern as editPublisher)
+    // If already soft-deleted, just return
+    if (publisher.is_deleted === 1) {
+      return res.status(200).json({
+        success: true,
+        msg: "Publisher already deleted.",
+        data: publisher,
+      });
+    }
+
+    // Before snapshot
     const beforePlain = publisher.get({ plain: true });
     const {
       password: oldPass,
@@ -552,28 +562,45 @@ async function deletePublisher(req, res) {
       ...beforeLog
     } = beforePlain;
 
-    await publisher.destroy();
+    // Soft delete: mark is_deleted = 1 (and optionally status = 3 "disabled")
+    await publisher.update({
+      is_deleted: 1,
+      status: 3, // optional, remove if you don't want to touch status
+    });
 
-    // Admin log for delete
+    await publisher.reload();
+
+    // After snapshot
+    const afterPlain = publisher.get({ plain: true });
+    const {
+      password: newPass,
+      two_fa_secret: newSecret,
+      twoFaSecret: newSecret2,
+      ...afterLog
+    } = afterPlain;
+
+    // Log admin action
     await logAdminAction({
       adminId,
-      actionCategory: 'publisher',
-      actionType: 'DELETED',
+      actionCategory: "publisher",
+      actionType: "DELETED", // soft deleted
       beforeData: beforeLog,
-      afterData: null, // nothing after delete
+      afterData: afterLog,
     });
 
     return res.status(200).json({
       success: true,
-      msg: 'Publisher deleted successfully.',
+      msg: "Publisher deleted successfully.",
+      data: publisher,
     });
   } catch (err) {
-    console.error('Error in deletePublisher:', err);
+    console.error("Error in deletePublisher:", err);
     return res
       .status(500)
-      .json({ success: false, msg: 'Internal server error' });
+      .json({ success: false, msg: "Internal server error" });
   }
 }
+
 
 
 module.exports = {
