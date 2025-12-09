@@ -10,7 +10,7 @@ const {
   uploadFile,
   deleteFile,
 } = require("../../utils/helpers/fileUpload");
-
+const { logAdminAction } = require("../../utils/helpers/adminLogger");
 // async function createInventory(req, res) {
 //   try {
 //     const schema = Joi.object({
@@ -350,6 +350,7 @@ async function updateInventory(req, res) {
     if (!session.success) {
       return res.status(401).json(session);
     }
+    const adminId = session.data; // for logging
 
     const id = Number(req.params.id);
     if (!id || id <= 0) {
@@ -397,6 +398,10 @@ async function updateInventory(req, res) {
       });
     }
 
+    // ----- BEFORE-UPDATE SNAPSHOT FOR LOG -----
+    const beforePlain = inventory.get({ plain: true });
+    const beforeLog = { ...beforePlain }; // no sensitive fields to strip
+
     const updateData = {
       ...value,
       ...(value.developerWeb ? { developerWeb: value.developerWeb } : {}),
@@ -406,6 +411,7 @@ async function updateInventory(req, res) {
     if (typeof value.is_deleted === "number") {
       updateData.is_deleted = value.is_deleted;
     }
+
     const finalType = updateData.type || inventory.type;
     const finalUrl =
       updateData.url !== undefined ? updateData.url : inventory.url;
@@ -417,27 +423,6 @@ async function updateInventory(req, res) {
         data: null,
       });
     }
-    // avatar upload for logo (like editPartner)
-    // if (req.file) {
-    //   const ok = await verifyFileType(req.file);
-    //   if (!ok) {
-    //     return res
-    //       .status(400)
-    //       .json({ success: false, msg: "Invalid logo file type" });
-    //   }
-
-    //   const storedName = await uploadFile(req.file, "upload/inventory");
-    //   updateData.logo = storedName;
-
-    //   // delete old logo if exists
-    //   if (inventory.logo) {
-    //     try {
-    //       await deleteFile(inventory.logo, "upload/inventory");
-    //     } catch (_) {
-    //       // ignore delete error
-    //     }
-    //   }
-    // }
 
     // avatar upload for logo (like editPartner)
     if (req.file) {
@@ -480,6 +465,28 @@ async function updateInventory(req, res) {
     }
 
     await inventory.update(updateData);
+    await inventory.reload();
+
+    const afterPlain = inventory.get({ plain: true });
+    const afterSafe = { ...afterPlain };
+
+    // Do not treat is_deleted changes as normal edit logs
+    const isSoftDeleteOperation =
+      typeof updateData.is_deleted === "number";
+
+    if (!isSoftDeleteOperation) {
+      let actionType = "EDITED";
+      if (beforeLog.status !== afterSafe.status) {
+        actionType = "STATUS_CHANGED";
+      }
+      await logAdminAction({
+        adminId,
+        actionCategory: "inventory",
+        actionType,
+        beforeData: beforeLog,
+        afterData: afterSafe,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -498,12 +505,14 @@ async function updateInventory(req, res) {
 
 async function deleteInventory(req, res) {
   try {
-    //  auth
+    // 1. Validate admin session
     const session = await isAdminSessionValid(req);
     if (!session.success) {
       return res.status(401).json(session);
     }
+    const adminId = session.data; // for logger
 
+    // 2. Validate ID
     const id = Number(req.params.id);
     if (!id || id <= 0) {
       return res.status(400).json({
@@ -513,6 +522,7 @@ async function deleteInventory(req, res) {
       });
     }
 
+    // 3. Load inventory
     const inventory = await Inventory.findByPk(id);
     if (!inventory) {
       return res.status(404).json({
@@ -522,6 +532,7 @@ async function deleteInventory(req, res) {
       });
     }
 
+    // 4. Already deleted → do NOT log
     if (inventory.is_deleted === 1) {
       return res.status(200).json({
         success: true,
@@ -530,16 +541,32 @@ async function deleteInventory(req, res) {
       });
     }
 
+    // 5. BEFORE DELETE SNAPSHOT (safe fields only)
+    const beforePlain = inventory.get({ plain: true });
+    const beforeLog = { ...beforePlain };
+
+    // 6. Perform soft delete
     await inventory.update({
       is_deleted: 1,
       partnerStatus: 0,
     });
 
+    // 7. WRITE DELETE LOG (clean — same pattern as publisher delete)
+    await logAdminAction({
+      adminId,
+      actionCategory: "inventory",
+      actionType: "DELETED",
+      beforeData: beforeLog,
+      afterData: null,
+    });
+
+    // 8. Response
     return res.status(200).json({
       success: true,
       msg: "Inventory deleted successfully.",
       data: inventory,
     });
+
   } catch (err) {
     console.error("deleteInventory error:", err);
     return res.status(500).json({

@@ -65,7 +65,6 @@ async function getPublishers(req, res) {
       sortDir,
     } = value;
 
-    // 3) Build where conditions
     const where = {};
 
     if (id) {
@@ -513,74 +512,69 @@ async function editPublisher(req, res) {
 // delete /admin/publishers/:id/delete
 async function deletePublisher(req, res) {
   try {
-    const schema = Joi.object({
+    // Validate :id (same style as editPublisher)
+    const paramSchema = Joi.object({
       id: Joi.number().integer().positive().required(),
     });
 
-    const { error, value } = schema.validate(req.params, {
+    const { error: paramErr, value: params } = paramSchema.validate(req.params, {
       abortEarly: true,
       stripUnknown: true,
-      convert: true,
     });
 
-    if (error) {
+    if (paramErr) {
       return res
         .status(400)
-        .json({ success: false, msg: error.details[0].message });
+        .json({ success: false, msg: paramErr.details[0].message });
     }
 
+    // Admin session validation (same as editPublisher)
     const session = await isAdminSessionValid(req, res);
     if (!session?.success) {
-      return res.status(401).json({ success: false, msg: "Unauthorized" });
+      return res.status(401).json({ success: false, msg: 'Unauthorized' });
     }
+    const adminId = session.data;
 
-    const publisher = await Publisher.findByPk(value.id);
+    // Load publisher
+    const publisher = await Publisher.findByPk(params.id);
     if (!publisher) {
       return res
         .status(404)
-        .json({ success: false, msg: "Publisher not found" });
+        .json({ success: false, msg: 'Publisher not found' });
     }
 
-    // if (publisher.status === 0) {
-    //   return res
-    //     .status(400)
-    //     .json({ success: false, msg: "Publisher already deleted." });
-    // }
+    // Before-delete snapshot (same pattern as editPublisher)
+    const beforePlain = publisher.get({ plain: true });
+    const {
+      password: oldPass,
+      two_fa_secret: oldSecret,
+      twoFaSecret: oldSecret2,
+      ...beforeLog
+    } = beforePlain;
 
-    if (Number(publisher.is_deleted) === 1) {
-      return res.status(200).json({
-        success: true,
-        msg: "publisher already deleted.",
-        data: { id: publisher.id },
-      });
-    }
+    await publisher.destroy();
 
-    await publisher.update({ is_deleted: 1 });
-
-    if (publisher.avatar) {
-      deleteFile(publisher.avatar, "upload/publishers").catch((err) => {
-        console.error("Failed to delete publisher avatar:", err);
-      });
-    }
+    // Admin log for delete
+    await logAdminAction({
+      adminId,
+      actionCategory: 'publisher',
+      actionType: 'DELETED',
+      beforeData: beforeLog,
+      afterData: null, // nothing after delete
+    });
 
     return res.status(200).json({
       success: true,
-      msg: "Publisher deleted successfully.",
-      data: {
-        id: publisher.id,
-        username: publisher.username,
-        email: publisher.email,
-        newStatus: 0,
-        is_deleted: 1,
-      },
+      msg: 'Publisher deleted successfully.',
     });
   } catch (err) {
-    console.error("Error in deletePublisher:", err);
+    console.error('Error in deletePublisher:', err);
     return res
       .status(500)
-      .json({ success: false, msg: "Internal server error" });
+      .json({ success: false, msg: 'Internal server error' });
   }
 }
+
 
 module.exports = {
   getPublishers,
